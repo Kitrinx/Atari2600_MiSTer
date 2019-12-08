@@ -181,14 +181,48 @@ architecture arch of A2601top is
 	signal DpcClocks : unsigned(15 downto 0) := (others=>'0');
 	signal clk_music : unsigned(3 downto 0) := (others=>'0');	 -- 3 e o melhor
 	signal DpcClockDivider : unsigned(9 downto 0);
+
+	component system2600 is
+		port (
+			clk: in std_logic;
+			rst: in std_logic;
+			d_o: out std_logic_vector(7 downto 0);
+			di: in std_logic_vector(7 downto 0);
+			a: out std_logic_vector(12 downto 0);
+			r: out std_logic;
+			pa: in std_logic_vector(7 downto 0);
+			pb: in std_logic_vector(7 downto 0);
+			paddle_0: in std_logic_vector(7 downto 0);
+			paddle_1: in std_logic_vector(7 downto 0);
+			paddle_2: in std_logic_vector(7 downto 0);
+			paddle_3: in std_logic_vector(7 downto 0);
+			paddle_ena1: in std_logic;
+			paddle_ena2: in std_logic;
+			inpt4: in std_logic;
+			inpt5: in std_logic;
+			colu: out std_logic;
+			vsyn: out std_logic;
+			hsyn: out std_logic;
+			hblank: out std_logic;
+			vblank: out std_logic;
+			rgbx2: out std_logic_vector(23 downto 0);
+			au0: out std_logic;
+			au1: out std_logic;
+			av0: out std_logic_vector(3 downto 0);
+			av1: out std_logic_vector(3 downto 0);
+			ph0_out: out std_logic;
+			ph2_out: out std_logic;
+			pal: in std_logic
+		);
+	end component;
 	 
 begin
 
-ms_A2601: work.A2601
+ms_A2601: component system2600
 port map(
 	clk         => clk,
 	rst         => rst,
-	do          => cpu_do,
+	d_o         => cpu_do,
 	di          => cpu_di,
 	a           => cpu_a,
 	pa          => pa,
