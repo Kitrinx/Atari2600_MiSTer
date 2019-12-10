@@ -1,6 +1,6 @@
 // Princess TIAbeanie
 // Jamie Dickson, 2019
-// Based on Stella Programmer's Guide, TIA schematics, and Stella Emulator
+// Based on Stella Programmer's Guide and TIA schematics, and verified with Stella Emulator
 
 // Enum ripped strait from Stella. Thanks man.
 enum bit [5:0] {
@@ -98,15 +98,69 @@ endmodule
 module audio
 (
 	input clk,
+	input ce,
 	input aud0,
 	input aud1,
-
+	input [3:0] volume,
+	input [4:0] freq,
+	input [3:0] audc,
+	output [3:0] audio
 );
 
-always_ff @(posedge clk) if (reset) begin
+reg [4:0] freq_div;
+reg [3:0] pulse_sr; // Pulse generator
+reg [4:0] noise_sr; // Noise generator
+reg noise;
 
-end else if (ce) begin
+reg noise_en;
+reg noise_hold		
 
+wire pulse_en;
+
+assign audio = pulse_sr[0] ? volume : 4'h0;
+
+always_comb begin
+	case (audc[3:2])
+		0: pulse_en = ((pulse_sr[1] ? 1 : 0) ^ pulse_sr[0]) && (pulse_sr != 4'h0A) && |audc[1:0];
+		1: pulse_en = ~pulse_sr[3];
+		2: pulse_en = ~noise_sr[0];
+		3: pulse_en = ~(pulse_sr[1] || |(pulse_sr[3:1]);
+	endcase
+end
+
+always_ff @(posedge clk) begin
+	if (reset) begin
+		freq_div <= 0;
+	end else if (aud0 | aud1) begin
+		freq_div <= freq_div + 1'd1;
+		audio_clk <= 0;
+		if (freq_div >= freq) begin
+			freq_div <= 0;
+			audio_clk <= 1;
+		end
+	end
+
+	// The audio ctrl register controls various dividers for the
+	// noise generator.
+	if (aud0 & audio_clk) begin
+		case (audc[1:0])
+			0: pulse_hold <= 0;
+			1: pulse_hold <= 0;
+			2: pulse_hold <= (noise_sr[4:1] != 4'b0010);
+			3: pulse_hold <= ~noise_sr[0];
+		endcase
+		if (~|audc[1:0])
+			noise_en <= ~|audc ? (pulse_cnt[0] ^ noise_cnt[0]) ||
+				~(|noise_cnt) | (pulse_cnt != 4'b1010)) || ~|audc[3:2];
+		else
+			noise_en <= ((noise_sr[3] ? 1 : 0) ^ noise_sr[0] || ~|noise_sr);
+	end
+
+	if (aud1 & audio_clk) begin
+		noise_sr <= {noise_en, noise_sr[4:1]};
+		if (~pulse_hold)
+			pulse_sr <= {pulse_en, pulse_sr[3:1]};
+	end
 end
 
 endmodule
@@ -116,6 +170,7 @@ module video_gen
 (
 	input clk,
 	input ce,
+	output [7:0] column;
 	output vsync,
 	output hsync,
 	output vblank,
@@ -131,6 +186,7 @@ localparam hblank_start = 160; // Blank 68 counts
 
 reg [7:0] h_count;// H count of 228
 
+assign column = h_count;
 
 always_ff @(posedge clk) if (reset) begin
 	h_count <= 0; // Do we want this?
@@ -244,48 +300,51 @@ endmodule
 module TIA
 (
 	// Original Pins
-	input clk,
-	output phi0,
-	input phi2,
-	input RW_n,
-	output rdy,
-	input [5:0]addr,
-	input [7:0] d_in,
+	input        clk,
+	output       phi0,
+	input        phi2,
+	input        RW_n,
+	output       rdy,
+	input  [5:0] addr,
+	input  [7:0] d_in,
 	output [7:0] d_out,
-	input [7:0] i0, // On real hardware, these would be ADC pins
-	input [7:0] i1,
-	input [7:0] i2,
-	input [7:0] i3,
-	input       i4,
-	input       i5,
+	input  [7:0] i0,     // On real hardware, these would be ADC pins
+	input  [7:0] i1,
+	input  [7:0] i2,
+	input  [7:0] i3,
+	input        i4,
+	input        i5,
 	output [3:0] col,
 	output [2:0] lum,
-	output BLK_n,
-	output sync,
-	input cs0_n,
-	input cs2,
+	output       BLK_n,
+	output       sync,
+	input        cs0_n,
+	input        cs2,
 
 	// Abstractions
-	input rst,
-	input ce, // Clock enable for CLK signal
-	input video_ce,
-	output vblank,
-	output hblank,
-	output vsync,
-	output hsync,
-	output phi2_gen
-
+	input        rst,
+	input        ce,     // Clock enable for CLK generation only
+	input        video_ce,
+	output       vblank,
+	output       hblank,
+	output       vsync,
+	output       hsync,
+	output       phi2_gen
 );
 
 reg [7:0] wreg[64]; // Write registers. Only 44 are used.
 reg [7:0] rreg[16]; // Read registers.
 reg rdy_latch; // buffer for the rdy signal
+reg [14:0] collision;
 
 wire [7:0] read_val;
 wire cs = ~cs0_n & cs2; // Chip Select (cs1 and 3 were NC)
 wire phase; // 0 = phi0, 1 = phi2
 wire wsync,rsync,resp0,resp1,resm0,resm1,resbl,hmove,hmclr,cxclr; // Strobe register signals
 wire [3:0] color_select;
+wire p0, p1, m0, m1, bl, pf; // Current object active flags
+wire aclk0, aclk1;
+wire [7:0] column;
 
 assign d_out = phase ? read_val : 8'hFF;
 assign rdy = ~(wsync & rdy_latch);
@@ -301,17 +360,67 @@ clockgen clockgen
 	.phase    (phase)
 );
 
+video_gen h_gen
+(
+	.clk    (clk),
+	.ce     (phi0),
+	.column (column),
+	.vsync  (vsync),
+	.hsync  (hsync),
+	.vblank (vblank),
+	.hblank (hblank),
+	.aud0   (aclk0),
+	.aud1   (aclk1),
+);
+
+//player0
+//player1
+//missile0
+//missile1
+//ball
+
+playfield playfield
+(
+	.clk(clk),
+	.ce(phi0),
+	.column (column),
+	.playfield({wreg[PF2], wreg[PF1], wreg[PF0][7:4]}),
+	.pf(pf)
+);
+
 priority_encoder priority
 (
-	.p0     (),
-	.m0     (),
-	.p1     (),
-	.m1     (),
-	.pf     (),
-	.cntd   (),
+	.p0     (p0),
+	.m0     (m0),
+	.p1     (p1),
+	.m1     (m1),
+	.pf     (pf),
+	.cntd   (column > 80),
 	.pfp    (wreg[CTRLPF][2]),
 	.score  (wreg[CTRLPF][1]),
 	.select (color_select)
+);
+
+audio audio0
+(
+	.clk    (clk),
+	.aud0   (aclk0),
+	.aud1   (aclk1),
+	.volume (wreg[AUDV0]),
+	.freq   (wreg[AUDF0]),
+	.audc   (wreg[AUDC0]),
+	.audio  (aud0)
+);
+
+audio audio1
+(
+	.clk    (clk),
+	.aud0   (aclk0),
+	.aud1   (aclk1),
+	.volume (wreg[AUDV1]),
+	.freq   (wreg[AUDF1]),
+	.audc   (wreg[AUDC1]),
+	.audio  (aud1)
 );
 
 // Select the correct output register
@@ -369,6 +478,18 @@ always_ff @(posedge clk) begin
 	old_hblank <= hblank;
 	if (~old_hblank & hblank)
 		rdy_latch <= 0;
+end
+
+// Calculate the collisions
+always_ff @(posedge clk) if (phi0) begin
+	wram[CXPM0P][7:6] <= {(m0 & p1), (m0 & m0)};
+	wram[CXPM1P][7:6] <= {(m1 & p0), (m1 & p1)};
+	wram[CXP0FB][7:6] <= {(p0 & pf), (p0 & bl)};
+	wram[CXP1FB][7:6] <= {(p1 & pf), (p1 & bl)};
+	wram[CXM0FB][7:6] <= {(m0 & pf), (m0 & bl)};
+	wram[CXM1FB][7:6] <= {(m1 & pf), (m1 & bl)};
+	wram[CXBLPF][7:6] <= {(bl & pf), 1'b0};
+	wram[CXPPMM][7:6] <= {(p0 & p1), (m0 & m1)};
 end
 
 endmodule
