@@ -70,18 +70,52 @@ enum bit [5:0] {
 
 module playfield
 (
-
+	input clk,
+	input phi0,
+	input [5:0] addr,
+	input [7:0] data,
+	input hblank,
+	input write,
+	input reset,
+	input ctlpf, // Control playfield, 1 makes right half mirror image
+	input cntd, // center delayed signal, high means right half
+	output pf
 );
 
+reg phi0_delay, pf_clock;
+reg [19:0] pf_sr;
 
-endmodule
+assign pf = pf_sr[0];
 
-/////////////////////////////////////////////////////////////////////////////////////////
+always @(posedge clk) if (reset) begin
+	pf_sr <= 0;
+	phi0_delay <= 0;
+	pf_clock <= 0;
+end else if (phi0) begin
+	if (write) begin
+		case (addr)
+			PF0: pf_sr[3:0] <= data[4:7];
+			PF1: pf_sr[11:4] <= data;
+			PF2: pf_sr[19:12] <= data;
+		endcase
+	end
 
-module collision
-(
+	// this clocks at every other phi0 cycle, not including the first
 
-);
+	if (~hblank) begin
+			pf_clock <= 0;
+		phi0_delay <= ~phi0_delay;
+		if (phi0_delay)
+			pf_clock <= 1;
+
+		if (pf_clock) begin
+			if (ctlpf & cntd) begin
+				pf_sr <= {pf_sr[18:0], pf_sr[19]};
+			end else begin
+				pf_sr <= {pf_sr[0], pf_sr[19:1]};
+		end
+	end
+end
 
 endmodule
 
@@ -94,6 +128,36 @@ module player
 
 endmodule
 
+/////////////////////////////////////////////////////////////////////////////////////////
+
+module misile
+(
+
+);
+
+endmodule
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
+module ball
+(
+	input clk,
+	input phi0,
+	input reset,
+	input hblank,
+	input enabl, // Enaball, get it ena..ball.. It was funnier in the 70s.
+	input [3:0], width,
+
+);
+
+reg [7:0] ball_count;
+
+always @(posedge clk) if (reset) begin
+	ball_count <= 0;
+end else begin
+end
+
+endmodule
 /////////////////////////////////////////////////////////////////////////////////////////
 module audio
 (
