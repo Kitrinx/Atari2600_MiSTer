@@ -558,7 +558,7 @@ entity TIA is
 		r: in std_logic;
 		a: in std_logic_vector(5 downto 0);
 		di: in std_logic_vector(7 downto 0);
-		do: out std_logic_vector(7 downto 0);
+		d_o: out std_logic_vector(7 downto 0);
 		colu: out std_logic_vector(6 downto 0);
 		hsyn: out std_logic;
 		vsyn: out std_logic;
@@ -717,7 +717,7 @@ architecture arch of TIA is
     signal inpt1: std_logic;
     signal inpt2: std_logic;
     signal inpt3: std_logic;
-
+    signal do: std_logic_vector(7 downto 0);
 begin
     paddle0: work.paddle port map(clk, hsync, paddle_0, inpt03_chg, inpt0);
     paddle1: work.paddle port map(clk, hsync, paddle_1, inpt03_chg, inpt1);
@@ -734,6 +734,8 @@ begin
 
     aud0: work.audio port map(clk, au_cnt, a0_freq, a0_ctrl, au0);
     aud1: work.audio port map(clk, au_cnt, a1_freq, a1_ctrl, au1);
+
+    d_o <= do;
 
     av0 <= a0_vol;
     av1 <= a1_vol;

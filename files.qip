@@ -6,6 +6,7 @@ set_global_assignment -name VHDL_FILE TIA.vhd
 set_global_assignment -name VHDL_FILE NTSCLookups.vhd
 set_global_assignment -name VHDL_FILE A6532.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE M6532.sv
+set_global_assignment -name SYSTEMVERILOG_FILE TIA.sv
 set_global_assignment -name SYSTEMVERILOG_FILE system_2600.sv
 set_global_assignment -name VHDL_FILE A2601top.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE Atari2600.sv

@@ -3,7 +3,7 @@
 // Based on Stella Programmer's Guide and TIA schematics, and verified with Stella Emulator
 
 // Enum ripped strait from Stella. Thanks man.
-enum bit [5:0] {
+typedef enum bit [5:0] {
 	VSYNC   = 6'h00,  // Write: vertical sync set-clear (D1)
 	VBLANK  = 6'h01,  // Write: vertical blank set-clear (D7-6,D1)
 	WSYNC   = 6'h02,  // Write: wait for leading edge of hrz. blank (strobe)
@@ -48,8 +48,10 @@ enum bit [5:0] {
 	RESMP1  = 6'h29,  // Write: reset missle 1 to player 1 (D1)
 	HMOVE   = 6'h2a,  // Write: apply horizontal motion (strobe)
 	HMCLR   = 6'h2b,  // Write: clear horizontal motion registers (strobe)
-	CXCLR   = 6'h2c,  // Write: clear collision latches (strobe)
+	CXCLR   = 6'h2c   // Write: clear collision latches (strobe)
+} write_registers;
 
+typedef enum bit [5:0] {
 	CXM0P   = 6'h00,  // Read collision: D7=(M0,P1); D6=(M0,P0)
 	CXM1P   = 6'h01,  // Read collision: D7=(M1,P0); D6=(M1,P1)
 	CXP0FB  = 6'h02,  // Read collision: D7=(P0,PF); D6=(P0,BL)
@@ -64,7 +66,7 @@ enum bit [5:0] {
 	INPT3   = 6'h0b,  // Read pot port: D7
 	INPT4   = 6'h0c,  // Read P1 joystick trigger: D7
 	INPT5   = 6'h0d   // Read P2 joystick trigger: D7
-};
+} read_registers;
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -94,7 +96,7 @@ always @(posedge clk) if (reset) begin
 end else if (phi0) begin
 	if (write) begin
 		case (addr)
-			PF0: pf_sr[3:0] <= data[4:7];
+			PF0: pf_sr[3:0] <= data[7:4];
 			PF1: pf_sr[11:4] <= data;
 			PF2: pf_sr[19:12] <= data;
 		endcase
@@ -113,6 +115,7 @@ end else if (phi0) begin
 				pf_sr <= {pf_sr[18:0], pf_sr[19]};
 			end else begin
 				pf_sr <= {pf_sr[0], pf_sr[19:1]};
+			end
 		end
 	end
 end
@@ -121,7 +124,7 @@ endmodule
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-module player
+module player_o
 (
 
 );
@@ -130,7 +133,7 @@ endmodule
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-module misile
+module missile_o
 (
 
 );
@@ -139,14 +142,14 @@ endmodule
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-module ball
+module ball_o
 (
 	input clk,
 	input phi0,
 	input reset,
 	input hblank,
 	input enabl, // Enaball, get it ena..ball.. It was funnier in the 70s.
-	input [3:0], width,
+	input [3:0] width
 
 );
 
@@ -158,10 +161,12 @@ end else begin
 end
 
 endmodule
+
 /////////////////////////////////////////////////////////////////////////////////////////
-module audio
+module audio_channel
 (
 	input clk,
+	input reset,
 	input ce,
 	input aud0,
 	input aud1,
@@ -177,18 +182,21 @@ reg [4:0] noise_sr; // Noise generator
 reg noise;
 
 reg noise_en;
-reg noise_hold		
+reg noise_hold;
 
 wire pulse_en;
+reg pulse_hold;
 
 assign audio = pulse_sr[0] ? volume : 4'h0;
+
+reg audio_clk;
 
 always_comb begin
 	case (audc[3:2])
 		0: pulse_en = ((pulse_sr[1] ? 1 : 0) ^ pulse_sr[0]) && (pulse_sr != 4'h0A) && |audc[1:0];
 		1: pulse_en = ~pulse_sr[3];
 		2: pulse_en = ~noise_sr[0];
-		3: pulse_en = ~(pulse_sr[1] || |(pulse_sr[3:1]);
+		3: pulse_en = ~(pulse_sr[1] || |(pulse_sr[3:1]));
 	endcase
 end
 
@@ -213,11 +221,12 @@ always_ff @(posedge clk) begin
 			2: pulse_hold <= (noise_sr[4:1] != 4'b0010);
 			3: pulse_hold <= ~noise_sr[0];
 		endcase
-		if (~|audc[1:0])
-			noise_en <= ~|audc ? (pulse_cnt[0] ^ noise_cnt[0]) ||
-				~(|noise_cnt) | (pulse_cnt != 4'b1010)) || ~|audc[3:2];
-		else
+		if (~|audc[1:0]) begin
+			noise_en <= (pulse_sr[0] ^ noise_sr[0]) ||
+				~((|noise_sr) || (pulse_sr != 4'b1010)) || ~|audc[3:2];
+		end else begin
 			noise_en <= ((noise_sr[3] ? 1 : 0) ^ noise_sr[0] || ~|noise_sr);
+		end
 	end
 
 	if (aud1 & audio_clk) begin
@@ -234,7 +243,8 @@ module video_gen
 (
 	input clk,
 	input ce,
-	output [7:0] column;
+	input reset,
+	output [7:0] column,
 	output vsync,
 	output hsync,
 	output vblank,
@@ -265,13 +275,14 @@ end else if (ce) begin
 	hsync <= (h_count >= hsync_start && h_count < hsync_end);
 end
 
-endmodule;
+endmodule
 
 /////////////////////////////////////////////////////////////////////////////////////////
 module clockgen
 (
 	input clk,
 	input ce,
+	input reset,
 	input phi2,
 	output reg phi0,
 	output reg phi2_gen,
@@ -342,6 +353,8 @@ module priority_encoder
 // to take the color-lum of player 0 in the left half of the screen and player 
 // 1 in the right half of the screen.
 
+wire [3:0] select;
+
 always_comb begin
 	casex ({pfp, (pf | bl), (p1 | m1), (p0 | m0)})
 		4'bX_001: select = 4'b0001;
@@ -361,7 +374,7 @@ end
 endmodule
 
 /////////////////////////////////////////////////////////////////////////////////////////
-module TIA
+module TIA2
 (
 	// Original Pins
 	input        clk,
@@ -378,12 +391,14 @@ module TIA
 	input  [7:0] i3,
 	input        i4,
 	input        i5,
+	output [3:0] aud0,
+	output [3:0] aud1,
 	output [3:0] col,
 	output [2:0] lum,
 	output       BLK_n,
 	output       sync,
 	input        cs0_n,
-	input        cs2,
+	input        cs2_n,
 
 	// Abstractions
 	input        rst,
@@ -402,7 +417,7 @@ reg rdy_latch; // buffer for the rdy signal
 reg [14:0] collision;
 
 wire [7:0] read_val;
-wire cs = ~cs0_n & cs2; // Chip Select (cs1 and 3 were NC)
+wire cs = ~cs0_n & ~cs2_n; // Chip Select (cs1 and 3 were NC)
 wire phase; // 0 = phi0, 1 = phi2
 wire wsync,rsync,resp0,resp1,resm0,resm1,resbl,hmove,hmclr,cxclr; // Strobe register signals
 wire [3:0] color_select;
@@ -412,7 +427,7 @@ wire [7:0] column;
 
 assign d_out = phase ? read_val : 8'hFF;
 assign rdy = ~(wsync & rdy_latch);
-assign BLK_n ~(hblank | vblank);
+assign BLK_n = ~(hblank | vblank);
 
 clockgen clockgen
 (
@@ -434,7 +449,7 @@ video_gen h_gen
 	.vblank (vblank),
 	.hblank (hblank),
 	.aud0   (aclk0),
-	.aud1   (aclk1),
+	.aud1   (aclk1)
 );
 
 //player0
@@ -452,7 +467,7 @@ playfield playfield
 	.pf(pf)
 );
 
-priority_encoder priority
+priority_encoder prior
 (
 	.p0     (p0),
 	.m0     (m0),
@@ -465,9 +480,10 @@ priority_encoder priority
 	.select (color_select)
 );
 
-audio audio0
+audio_channel audio0
 (
 	.clk    (clk),
+	.reset  (rst),
 	.aud0   (aclk0),
 	.aud1   (aclk1),
 	.volume (wreg[AUDV0]),
@@ -476,9 +492,10 @@ audio audio0
 	.audio  (aud0)
 );
 
-audio audio1
+audio_channel audio1
 (
 	.clk    (clk),
+	.reset  (rst),
 	.aud0   (aclk0),
 	.aud1   (aclk1),
 	.volume (wreg[AUDV1]),
@@ -513,7 +530,7 @@ always_comb begin
 		read_val = 8'hFF;
 end
 
-always @(posedge clk) if (reset) begin
+always @(posedge clk) if (rst) begin
 	wreg <= '{64{8'h00}};
 end else if (phi0 & cs & ~RW_n) begin
 	wreg[addr] <= d_in;
@@ -546,14 +563,14 @@ end
 
 // Calculate the collisions
 always_ff @(posedge clk) if (phi0) begin
-	wram[CXPM0P][7:6] <= {(m0 & p1), (m0 & m0)};
-	wram[CXPM1P][7:6] <= {(m1 & p0), (m1 & p1)};
-	wram[CXP0FB][7:6] <= {(p0 & pf), (p0 & bl)};
-	wram[CXP1FB][7:6] <= {(p1 & pf), (p1 & bl)};
-	wram[CXM0FB][7:6] <= {(m0 & pf), (m0 & bl)};
-	wram[CXM1FB][7:6] <= {(m1 & pf), (m1 & bl)};
-	wram[CXBLPF][7:6] <= {(bl & pf), 1'b0};
-	wram[CXPPMM][7:6] <= {(p0 & p1), (m0 & m1)};
+	rreg[CXM0P][7:6] <= {(m0 & p1), (m0 & m0)};
+	rreg[CXM1P][7:6] <= {(m1 & p0), (m1 & p1)};
+	rreg[CXP0FB][7:6] <= {(p0 & pf), (p0 & bl)};
+	rreg[CXP1FB][7:6] <= {(p1 & pf), (p1 & bl)};
+	rreg[CXM0FB][7:6] <= {(m0 & pf), (m0 & bl)};
+	rreg[CXM1FB][7:6] <= {(m1 & pf), (m1 & bl)};
+	rreg[CXBLPF][7:6] <= {(bl & pf), 1'b0};
+	rreg[CXPPMM][7:6] <= {(p0 & p1), (m0 & m1)};
 end
 
 endmodule
