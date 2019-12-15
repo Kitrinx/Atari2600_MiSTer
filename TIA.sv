@@ -458,14 +458,14 @@ video_gen h_gen
 //missile1
 //ball
 
-playfield playfield
-(
-	.clk(clk),
-	.ce(phi0),
-	.column (column),
-	.playfield({wreg[PF2], wreg[PF1], wreg[PF0][7:4]}),
-	.pf(pf)
-);
+// playfield playfield
+// (
+// 	.clk(clk),
+// 	.ce(phi0),
+// 	.column (column),
+// 	.playfield({wreg[PF2], wreg[PF1], wreg[PF0][7:4]}),
+// 	.pf(pf)
+// );
 
 priority_encoder prior
 (
@@ -477,7 +477,7 @@ priority_encoder prior
 	.cntd   (column > 80),
 	.pfp    (wreg[CTRLPF][2]),
 	.score  (wreg[CTRLPF][1]),
-	.select (color_select)
+	.col_select (color_select)
 );
 
 audio_channel audio0
