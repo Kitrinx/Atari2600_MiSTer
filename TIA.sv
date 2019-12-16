@@ -51,21 +51,21 @@ typedef enum bit [5:0] {
 	CXCLR   = 6'h2c   // Write: clear collision latches (strobe)
 } write_registers;
 
-typedef enum bit [5:0] {
-	CXM0P   = 6'h00,  // Read collision: D7=(M0,P1); D6=(M0,P0)
-	CXM1P   = 6'h01,  // Read collision: D7=(M1,P0); D6=(M1,P1)
-	CXP0FB  = 6'h02,  // Read collision: D7=(P0,PF); D6=(P0,BL)
-	CXP1FB  = 6'h03,  // Read collision: D7=(P1,PF); D6=(P1,BL)
-	CXM0FB  = 6'h04,  // Read collision: D7=(M0,PF); D6=(M0,BL)
-	CXM1FB  = 6'h05,  // Read collision: D7=(M1,PF); D6=(M1,BL)
-	CXBLPF  = 6'h06,  // Read collision: D7=(BL,PF); D6=(unused)
-	CXPPMM  = 6'h07,  // Read collision: D7=(P0,P1); D6=(M0,M1)
-	INPT0   = 6'h08,  // Read pot port: D7
-	INPT1   = 6'h09,  // Read pot port: D7
-	INPT2   = 6'h0a,  // Read pot port: D7
-	INPT3   = 6'h0b,  // Read pot port: D7
-	INPT4   = 6'h0c,  // Read P1 joystick trigger: D7
-	INPT5   = 6'h0d   // Read P2 joystick trigger: D7
+typedef enum bit [3:0] {
+	CXM0P   = 4'h0,  // Read collision: D7=(M0,P1); D6=(M0,P0)
+	CXM1P   = 4'h1,  // Read collision: D7=(M1,P0); D6=(M1,P1)
+	CXP0FB  = 4'h2,  // Read collision: D7=(P0,PF); D6=(P0,BL)
+	CXP1FB  = 4'h3,  // Read collision: D7=(P1,PF); D6=(P1,BL)
+	CXM0FB  = 4'h4,  // Read collision: D7=(M0,PF); D6=(M0,BL)
+	CXM1FB  = 4'h5,  // Read collision: D7=(M1,PF); D6=(M1,BL)
+	CXBLPF  = 4'h6,  // Read collision: D7=(BL,PF); D6=(unused)
+	CXPPMM  = 4'h7,  // Read collision: D7=(P0,P1); D6=(M0,M1)
+	INPT0   = 4'h8,  // Read pot port: D7
+	INPT1   = 4'h9,  // Read pot port: D7
+	INPT2   = 4'ha,  // Read pot port: D7
+	INPT3   = 4'hb,  // Read pot port: D7
+	INPT4   = 4'hc,  // Read P1 joystick trigger: D7
+	INPT5   = 4'hd   // Read P2 joystick trigger: D7
 } read_registers;
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -73,14 +73,14 @@ typedef enum bit [5:0] {
 module playfield
 (
 	input clk,
+	input reset,
 	input phi0,
 	input [5:0] addr,
 	input [7:0] data,
 	input hblank,
 	input write,
-	input reset,
-	input ctlpf, // Control playfield, 1 makes right half mirror image
-	input cntd, // center delayed signal, high means right half
+	input mirror, // Control playfield, 1 makes right half mirror image
+	input cntd,   // center delayed signal, high means right half
 	output pf
 );
 
@@ -111,7 +111,7 @@ end else if (phi0) begin
 			pf_clock <= 1;
 
 		if (pf_clock) begin
-			if (ctlpf & cntd) begin
+			if (mirror & cntd) begin
 				pf_sr <= {pf_sr[18:0], pf_sr[19]};
 			end else begin
 				pf_sr <= {pf_sr[0], pf_sr[19:1]};
@@ -126,7 +126,14 @@ endmodule
 
 module player_o
 (
-
+	input resp,
+	input hmove,
+	input hmclr,
+	input signed [3:0] hmp,
+	input [7:0] grp,
+	input refp, // Player reflect
+	input [2:0] size,
+	output p
 );
 
 endmodule
@@ -135,7 +142,14 @@ endmodule
 
 module missile_o
 (
-
+	input resm,
+	input resmp,
+	input hmove,
+	input hmclr,
+	input enam,
+	input signed [3:0] hmm,
+	input [1:0] size,
+	output m
 );
 
 endmodule
@@ -146,16 +160,19 @@ module ball_o
 (
 	input clk,
 	input phi0,
-	input reset,
-	input hblank,
+	input hmove,
+	input hmclr,
+	input signed [3:0] hmbl,
 	input enabl, // Enaball, get it ena..ball.. It was funnier in the 70s.
-	input [3:0] width
-
+	input resbl,
+	input hblank,
+	input [1:0] size,
+	output bl
 );
 
 reg [7:0] ball_count;
 
-always @(posedge clk) if (reset) begin
+always @(posedge clk) if (resbl) begin
 	ball_count <= 0;
 end else begin
 end
@@ -193,7 +210,7 @@ reg audio_clk;
 
 always_comb begin
 	case (audc[3:2])
-		0: pulse_en = ((pulse_sr[1] ? 1 : 0) ^ pulse_sr[0]) && (pulse_sr != 4'h0A) && |audc[1:0];
+		0: pulse_en = ((pulse_sr[1] ? 1 : 0) ^ pulse_sr[0]) && (pulse_sr != 4'hA) && |audc[1:0];
 		1: pulse_en = ~pulse_sr[3];
 		2: pulse_en = ~noise_sr[0];
 		3: pulse_en = ~(pulse_sr[1] || |(pulse_sr[3:1]));
@@ -239,15 +256,14 @@ end
 endmodule
 
 /////////////////////////////////////////////////////////////////////////////////////////
-module video_gen
+module horiz_gen
 (
 	input clk,
 	input ce,
-	input reset,
+	input rsync,
 	output [7:0] column,
-	output vsync,
 	output hsync,
-	output vblank,
+	output reg cntd,
 	output reg hblank,
 	output reg aud0, // Audio clocks need to be high twice per line
 	output reg aud1
@@ -262,8 +278,8 @@ reg [7:0] h_count;// H count of 228
 
 assign column = h_count;
 
-always_ff @(posedge clk) if (reset) begin
-	h_count <= 0; // Do we want this?
+always_ff @(posedge clk) if (rsync) begin
+	h_count <= 0;
 end else if (ce) begin
 	h_count <= h_count + 1'd1;
 	if (h_count >= 227)
@@ -271,9 +287,18 @@ end else if (ce) begin
 	// According to stella, the magic numbers for audio clocks are 81 and 149
 	aud0 <= (h_count == 80);
 	aud1 <= (h_count == 148);
+	cntd <= (h_count == 79);
 	hblank <= (h_count >= hblank_start);
 	hsync <= (h_count >= hsync_start && h_count < hsync_end);
 end
+
+// 000000 err77 0
+// 101011 end12 43
+// 001000 rhs73 8
+// 010011 cnt15 19
+// 000011 shs17 
+// 101000 lrhb72
+// 100011 rhb16
 
 endmodule
 
@@ -292,6 +317,11 @@ module clockgen
 // Generation of Phi0. One phi0 clock is 3x hardware clocks, but we will allow for CE so we can use a single PLL.
 // In this implementation, our 6507 does not generate phi2, so we will add here as an extra port which can
 // be fed immediately back into the chip to satisfy the phi2 signal.
+
+// It's important to note that in this context, CE represents the crystal or "color clock", 
+// Phi0 represents the generated clock that drives the 6507, and Phi2 should be the same as Phi1, but one
+// "color clock" delayed, and it drives RIOT and parts of TIA. The actual "clk" port is any PLL.
+
 always_ff @(posedge clk) begin : phi0_gen
 	reg [1:0] phi_div;
 	phi0 <= 0;
@@ -304,7 +334,7 @@ always_ff @(posedge clk) begin : phi0_gen
 			phi_div <= 0;
 			phi0 <= 1;
 		end
-		if (phi_div >= 1)
+		if (phi_div == 0)
 			phi2_gen <= 1;
 	end
 end
@@ -353,21 +383,19 @@ module priority_encoder
 // to take the color-lum of player 0 in the left half of the screen and player 
 // 1 in the right half of the screen.
 
-wire [3:0] select;
-
 always_comb begin
 	casex ({pfp, (pf | bl), (p1 | m1), (p0 | m0)})
-		4'bX_001: select = 4'b0001;
-		4'bX_010: select = 4'b0010;
-		4'bX_011: select = 4'b0001;
-		4'bX_100: select = 4'b0100;
-		4'b0_101: select = 4'b0001;
-		4'b0_110: select = 4'b0010;
-		4'b0_111: select = 4'b0001;
-		4'b1_101: select = score ? (cntd ? 4'b0010 : 4'b0001) : 4'b0100;
-		4'b1_110: select = score ? (cntd ? 4'b0010 : 4'b0001) : 4'b0100;
-		4'b1_111: select = score ? (cntd ? 4'b0010 : 4'b0001) : 4'b0100;
-		default: select = 4'b1000;
+		4'bX_001: col_select = 4'b0001;
+		4'bX_010: col_select = 4'b0010;
+		4'bX_011: col_select = 4'b0001;
+		4'bX_100: col_select = 4'b0100;
+		4'b0_101: col_select = 4'b0001;
+		4'b0_110: col_select = 4'b0010;
+		4'b0_111: col_select = 4'b0001;
+		4'b1_101: col_select = score ? (cntd ? 4'b0010 : 4'b0001) : 4'b0100;
+		4'b1_110: col_select = score ? (cntd ? 4'b0010 : 4'b0001) : 4'b0100;
+		4'b1_111: col_select = score ? (cntd ? 4'b0010 : 4'b0001) : 4'b0100;
+		default: col_select = 4'b1000;
 	endcase
 end
 
@@ -385,10 +413,7 @@ module TIA2
 	input  [5:0] addr,
 	input  [7:0] d_in,
 	output [7:0] d_out,
-	input  [7:0] i0,     // On real hardware, these would be ADC pins
-	input  [7:0] i1,
-	input  [7:0] i2,
-	input  [7:0] i3,
+	input  [3:0][7:0] i,     // On real hardware, these would be ADC pins. i0..3
 	input        i4,
 	input        i5,
 	output [3:0] aud0,
@@ -422,12 +447,63 @@ wire phase; // 0 = phi0, 1 = phi2
 wire wsync,rsync,resp0,resp1,resm0,resm1,resbl,hmove,hmclr,cxclr; // Strobe register signals
 wire [3:0] color_select;
 wire p0, p1, m0, m1, bl, pf; // Current object active flags
-wire aclk0, aclk1;
+wire aclk0, aclk1, cntd;
 wire [7:0] column;
 
 assign d_out = phase ? read_val : 8'hFF;
-assign rdy = ~(wsync & rdy_latch);
+assign rdy = ~(wsync | rdy_latch);
 assign BLK_n = ~(hblank | vblank);
+assign sync = ~(hsync | vsync);
+assign vsync = wreg[VSYNC][1];
+assign vblank = wreg[VBLANK][1];
+
+
+// Address Decoder
+// Register writes happen when Phi2 falls, or in our context, when Phi0 rises.
+// Register reads happen when Phi2 is high. This is relevant in particular to RIOT which is clocked on Phi2.
+
+always_comb begin
+	if (cs & RW_n)
+		if (addr[4:0] == INPT4 && ~wreg[VSYNC][6])
+			read_val = {i4, 7'h7F};
+		else if (addr[4:0] == INPT5 && ~wreg[VSYNC][6])
+			read_val = {i5, 7'h7F};
+		else
+			read_val = rreg[addr[3:0]]; // reads only use the lower 4 bits of addr
+	else
+		read_val = 8'hFF;
+end
+
+always @(posedge clk) if (rst) begin
+	wreg <= '{64{8'h00}};
+end else if (phi0 & cs & ~RW_n) begin
+	wreg[addr] <= d_in;
+end
+
+// "Strobe" registers have an immediate effect
+always_comb begin
+	{wsync,rsync,resp0,resp1,resm0,resm1,resbl,hmove,hmclr,cxclr} = '0;
+	if (~RW_n) begin
+		case(addr)
+			WSYNC: wsync = 1;
+			RSYNC: rsync = 1;
+			RESP0: resp0 = 1;
+			RESP1: resp1 = 1;
+			RESM0: resm0 = 1;
+			RESM1: resm1 = 1;
+			RESBL: resbl = 1;
+			HMOVE: hmove = 1;
+			HMCLR: hmclr = 1;
+			CXCLR: cxclr = 1;
+			default: {wsync,rsync,resp0,resp1,resm0,resm1,resbl,hmove,hmclr,cxclr} = '0;
+		endcase
+	end
+end
+
+// Unaccount for:
+// VDELP0
+
+// Submodules
 
 clockgen clockgen
 (
@@ -439,33 +515,92 @@ clockgen clockgen
 	.phase    (phase)
 );
 
-video_gen h_gen
+horiz_gen h_gen
 (
 	.clk    (clk),
-	.ce     (phi0),
+	.ce     (ce),
+	.rsync  (rsync | rst),
 	.column (column),
-	.vsync  (vsync),
 	.hsync  (hsync),
-	.vblank (vblank),
 	.hblank (hblank),
+	.cntd   (cntd),
 	.aud0   (aclk0),
 	.aud1   (aclk1)
 );
 
-//player0
-//player1
-//missile0
-//missile1
-//ball
+playfield playfield
+(
+	.clk(clk),
+	.reset(rst),
+	.phi0(phi0),
+	.addr(addr),
+	.data(d_in),
+	.hblank(hblank),
+	.write(~RW_n),
+	.mirror(wreg[CTRLPF][0]),
+	.cntd(cntd),
+	.pf(pf)
+);
 
-// playfield playfield
-// (
-// 	.clk(clk),
-// 	.ce(phi0),
-// 	.column (column),
-// 	.playfield({wreg[PF2], wreg[PF1], wreg[PF0][7:4]}),
-// 	.pf(pf)
-// );
+player_o player0
+(
+	.resp(resp0),
+	.hmove(hmove),
+	.hmclr(hmclr),
+	.hmp(wreg[HMP0][7:4]),
+	.grp(wreg[GRP0]),
+	.refp(wreg[REFP0][3]),
+	.size(wreg[NUSIZ0][2:0]),
+	.p(p0)
+);
+
+player_o player1
+(
+	.resp(resp1),
+	.hmove(hmove),
+	.hmclr(hmclr),
+	.hmp(wreg[HMP1][7:4]),
+	.grp(wreg[GRP1]),
+	.refp(wreg[REFP1][3]),
+	.size(wreg[NUSIZ1][2:0]),
+	.p(p1)
+);
+
+missile_o missile0
+(
+	.resm(resm0),
+	.resmp(wreg[RESMP0][1]),
+	.hmove(hmove),
+	.hmclr(hmclr),
+	.enam(wreg[ENAM0][1]),
+	.hmm(wreg[HMM0][7:4]),
+	.size(wreg[NUSIZ0][5:4]),
+	.m(m0)
+);
+
+missile_o missile1
+(
+	.resm(resm1),
+	.resmp(wreg[RESMP1][1]),
+	.hmove(hmove),
+	.hmclr(hmclr),
+	.enam(wreg[ENAM1][1]),
+	.hmm(wreg[HMM1][7:4]),
+	.size(wreg[NUSIZ1][5:4]),
+	.m(m1)
+);
+
+ball_o ball
+(
+	.clk(clk),
+	.resbl(resbl),
+	.hmove(hmove),
+	.hmclr(hmclr),
+	.enabl(wreg[ENABL][1]),
+	.hmbl(wreg[HMBL][7:4]),
+	.size(wreg[CTRLPF][5:4]),
+	.bl(bl)
+);
 
 priority_encoder prior
 (
@@ -473,6 +608,7 @@ priority_encoder prior
 	.m0     (m0),
 	.p1     (p1),
 	.m1     (m1),
+	.bl     (bl),
 	.pf     (pf),
 	.cntd   (column > 80),
 	.pfp    (wreg[CTRLPF][2]),
@@ -504,6 +640,7 @@ audio_channel audio1
 	.audio  (aud1)
 );
 
+
 // Select the correct output register
 always_comb begin
 	if (hblank | vblank)
@@ -519,58 +656,70 @@ always_comb begin
 	end
 end
 
-// Chip reads and writes
-// Register writes happen when Phi2 falls, or in our context, when Phi0 rises.
-// Register reads happen when Phi2 is high. This is relevant in particular to RIOT which is clocked on Phi2.
-
-always_comb begin
-	if (cs & RW_n)
-		read_val = rreg[addr[3:0]]; // reads only use the lower 4 bits of addr
-	else
-		read_val = 8'hFF;
-end
-
-always @(posedge clk) if (rst) begin
-	wreg <= '{64{8'h00}};
-end else if (phi0 & cs & ~RW_n) begin
-	wreg[addr] <= d_in;
-end
-
-// "Strobe" registers have an immediate effect
-always_comb begin
-	{wsync,rsync,resp0,resp1,resm0,resm1,resbl,hmove,hmclr,cxclr} = '0;
-	case(addr)
-		WSYNC: wsync = 1;
-		RSYNC: rsync = 1;
-		RESP0: resp0 = 1;
-		RESP1: resp1 = 1;
-		RESM0: resm0 = 1;
-		RESM1: resm1 = 1;
-		RESBL: resbl = 1;
-		HMOVE: hmove = 1;
-		HMCLR: hmclr = 1;
-		CXCLR: cxclr = 1;
-	endcase
-end
-
 // WSYNC register controls the RDY signal to the CPU. It is cleared at the start of hblank.
 always_ff @(posedge clk) begin
 	reg old_hblank;
 	old_hblank <= hblank;
+	if (wsync)
+		rdy_latch <= 1;
+
 	if (~old_hblank & hblank)
 		rdy_latch <= 0;
 end
 
 // Calculate the collisions
-always_ff @(posedge clk) if (phi0) begin
-	rreg[CXM0P][7:6] <= {(m0 & p1), (m0 & m0)};
-	rreg[CXM1P][7:6] <= {(m1 & p0), (m1 & p1)};
-	rreg[CXP0FB][7:6] <= {(p0 & pf), (p0 & bl)};
-	rreg[CXP1FB][7:6] <= {(p1 & pf), (p1 & bl)};
-	rreg[CXM0FB][7:6] <= {(m0 & pf), (m0 & bl)};
-	rreg[CXM1FB][7:6] <= {(m1 & pf), (m1 & bl)};
-	rreg[CXBLPF][7:6] <= {(bl & pf), 1'b0};
-	rreg[CXPPMM][7:6] <= {(p0 & p1), (m0 & m1)};
+reg hsync_clock;
+
+always_ff @(posedge clk) begin : read_reg_block
+	reg old_hsync;
+	reg [8:0] x;
+	reg [7:0] icount;
+
+	hsync_clock <= 0;
+	old_hsync <= hsync;
+	if (~old_hsync & hsync)
+		hsync_clock <= 1;
+
+	if (rst) begin 
+		rreg <= '{16{8'h00}};
+
+	end else if (phi0) begin
+		if (cxclr) begin
+			{rreg[CXM0P][7:6], rreg[CXM1P][7:6], rreg[CXP0FB][7:6],
+				rreg[CXP1FB][7:6], rreg[CXM0FB][7:6], rreg[CXM1FB][7:6],
+				rreg[CXBLPF][7:6], rreg[CXPPMM][7:6]} <= '0;
+		end else begin
+			rreg[CXM0P][7:6]  <= (rreg[CXM0P][7:6] | {(m0 & p1), (m0 & m0)});
+			rreg[CXM1P][7:6]  <= (rreg[CXM1P][7:6] | {(m1 & p0), (m1 & p1)});
+			rreg[CXP0FB][7:6] <= (rreg[CXM1P][7:6] | {(p0 & pf), (p0 & bl)});
+			rreg[CXP1FB][7:6] <= (rreg[CXP1FB][7:6]| {(p1 & pf), (p1 & bl)});
+			rreg[CXM0FB][7:6] <= (rreg[CXM0FB][7:6]| {(m0 & pf), (m0 & bl)});
+			rreg[CXM1FB][7:6] <= (rreg[CXM1FB][7:6]| {(m1 & pf), (m1 & bl)});
+			rreg[CXBLPF][7:6] <= (rreg[CXBLPF][7:6]| {(bl & pf), 1'b0});
+			rreg[CXPPMM][7:6] <= (rreg[CXPPMM][7:6]| {(p0 & p1), (m0 & m1)});
+		end
+
+		// So analog input requires simulating the capacitor recharge of the paddle
+		// circuit. This generally takes 1 hsync per (196 - (value / 2)) of the given input port.
+		for (x = 0; x < 4; x = x + 1'd1) begin
+			rreg[{2'b10, x[1:0]}][7] <= ((8'd196 - i[x[1:0]][7:1]) <= icount);
+		end
+	end
+
+	if (~wreg[VBLANK][6]) begin
+		{rreg[INPT4][7], rreg[INPT5][7]} <= '0;
+	end else begin
+		if (~i4)
+			rreg[INPT4][7] <= 0;
+		if (~i5)
+			rreg[INPT5][7] <= 0;
+	end
+
+	if (wreg[VSYNC][7]) begin
+		icount <= 0;
+	end else if (hsync_clock && icount < 255) begin
+		icount <= icount + 1'd1;
+	end
 end
 
 endmodule
