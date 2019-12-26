@@ -37,7 +37,7 @@ entity A2601top is
 		reset     : in std_logic;
 		clk       : in std_logic;
 
-		audio     : out std_logic_vector(4 downto 0);
+		audio     : out std_logic_vector(15 downto 0);
 
 		O_VSYNC   : out std_logic;
 		O_HSYNC   : out std_logic;
@@ -84,7 +84,10 @@ entity A2601top is
 		rom_size  : in std_logic_vector(16 downto 0);
 
 		pal       : in std_logic;
-		p_dif     : in std_logic_vector(1 downto 0)
+		p_dif     : in std_logic_vector(1 downto 0);
+		video_sw  : in std_logic;
+		audio_sw  : in std_logic;
+		clocks_sw : in std_logic
 	);
 end A2601top;
 
@@ -181,6 +184,7 @@ architecture arch of A2601top is
 	signal DpcClocks : unsigned(15 downto 0) := (others=>'0');
 	signal clk_music : unsigned(3 downto 0) := (others=>'0');	 -- 3 e o melhor
 	signal DpcClockDivider : unsigned(9 downto 0);
+	signal audio_mono : std_logic_vector(15 downto 0);
 
 	component system2600 is
 		port (
@@ -212,7 +216,11 @@ architecture arch of A2601top is
 			av1: out std_logic_vector(3 downto 0);
 			ph0_out: out std_logic;
 			ph2_out: out std_logic;
-			pal: in std_logic
+			pal: in std_logic;
+			video_de: in std_logic;
+			audio_de: in std_logic;
+			clocks_de: in std_logic;
+			audio_mono: out std_logic_vector(15 downto 0)
 		);
 	end component;
 	 
@@ -246,7 +254,11 @@ port map(
 	av0         => av0,
 	av1         => av1,
 	ph0_out     => ph0,
-	pal         => pal
+	pal         => pal,
+	video_de    => video_sw,
+	audio_de    => audio_sw,
+	clocks_de   => clocks_sw,
+	audio_mono  => audio_mono
 );
 
 O_VIDEO_R <= rgbx2(23 downto 16);
@@ -289,7 +301,7 @@ inpt5 <= p2_f or paddle_ena34;
 auv0 <= ("0" & unsigned(av0)) when (au0 = '1') else "00000";
 auv1 <= ("0" & unsigned(av1)) when (au1 = '1') else "00000";
 
-audio <= std_logic_vector(auv0 + auv1);
+audio <= audio_mono;
 
 ram: work.ramx8 generic map(10) port map(clk, sc_r, cpu_do, sc_d_out, sc_a);
 

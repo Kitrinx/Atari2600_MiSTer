@@ -139,11 +139,21 @@ assign BUTTONS   = 0;
 assign VIDEO_ARX = status[8] ? 8'd16 : 8'd4;
 assign VIDEO_ARY = status[8] ? 8'd9  : 8'd3; 
 
+// Status Bit Map:
+// 0         1         2         3 
+// 01234567890123456789012345678901
+// 0123456789ABCDEFGHIJKLMNOPQRSTUV
+// XXXXXXXXXXX XXXXXXXXXXXXXXXXX XX
+
 `include "build_id.v" 
 localparam CONF_STR = {
 	"ATARI2600;;",
 	"F,*;",
 	"O9A,SuperChip,Auto,Disable,Enable;",
+	"-;",
+	"OH,TIA Video toggle,Old,New;",
+	"OI,TIA Audio toggle,Old,New;",
+	"OJ,TIA Clock toggle,Old,New;",
 	"-;",
 	"O1,Colors,NTSC,PAL;",
 	"O2,Video mode,Color,Mono;",
@@ -287,8 +297,8 @@ always @(posedge clk_sys) begin
 	end
 end
 
-wire [4:0] audio;
-assign AUDIO_R = {3{audio}};
+wire [15:0] audio;
+assign AUDIO_R = audio;
 assign AUDIO_L = AUDIO_R;
 assign AUDIO_S = 0;
 assign AUDIO_MIX = 0;
@@ -310,8 +320,8 @@ A2601top A2601top
 
 	.audio(audio),
 
-	//.O_VSYNC(VSync),
-	.O_HSYNC(hs),
+	.O_VSYNC(VSync),
+	.O_HSYNC(HSync),
 	.O_HBLANK(HBlank),
 	.O_VBLANK(VBlank),
 	.O_VIDEO_R(R),
@@ -354,7 +364,10 @@ A2601top A2601top
 	.rom_do(rom_data),
 
 	.pal(status[1]),
-	.p_dif(status[4:3])
+	.p_dif(status[4:3]),
+	.video_sw(status[17]),
+	.audio_sw(status[18]),
+	.clocks_sw(status[19])
 );
 
 wire [7:0] R,G,B;
@@ -363,23 +376,23 @@ reg  HSync;
 wire HBlank, VBlank;
 reg VSync;
 
-always @(posedge CLK_VIDEO) begin
-	reg       old_vbl;
-	reg [2:0] vbl;
-	reg [7:0] vblcnt, vspos;
+// always @(posedge CLK_VIDEO) begin
+// 	reg       old_vbl;
+// 	reg [2:0] vbl;
+// 	reg [7:0] vblcnt, vspos;
 	
-	HSync <= hs;
-	if(~HSync & hs) begin
-		old_vbl <= VBlank;
+// 	HSync <= hs;
+// 	if(~HSync & hs) begin
+// 		old_vbl <= VBlank;
 		
-		if(VBlank) vblcnt <= vblcnt+1'd1;
-		if(~old_vbl & VBlank) vblcnt <= 0;
-		if(old_vbl & ~VBlank) vspos <= (vblcnt>>1) - 8'd10;
+// 		if(VBlank) vblcnt <= vblcnt+1'd1;
+// 		if(~old_vbl & VBlank) vblcnt <= 0;
+// 		if(old_vbl & ~VBlank) vspos <= (vblcnt>>1) - 8'd10;
 
-		{VSync,vbl} <= {vbl,1'b0};
-		if(vblcnt == vspos) {VSync,vbl} <= '1;
-	end
-end
+// 		{VSync,vbl} <= {vbl,1'b0};
+// 		if(vblcnt == vspos) {VSync,vbl} <= '1;
+// 	end
+// end
 
 wire [2:0] scale = status[7:5];
 wire [2:0] sl = scale ? scale - 1'd1 : 3'd0;
